@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from ..database import get_db
 from ..models.user import User
 from ..models.prova import Prova
-from ..models.plano import Plano, Assinatura
+from ..models.plano import Plano, Assinatura, StatusAssinatura
 from ..models.pagamento import Pagamento, StatusPagamento
 from ..auth.dependencies import get_current_admin_user
 from datetime import datetime, timedelta
@@ -34,7 +34,7 @@ def dashboard_admin(db: Session = Depends(get_db),
     # Estatísticas de planos
     total_assinaturas = db.query(Assinatura).count()
     assinaturas_ativas = db.query(Assinatura).filter(
-        Assinatura.status == "ativa"
+        Assinatura.status == StatusAssinatura.ATIVA
     ).count()
     
     # Estatísticas dos últimos 30 dias
@@ -75,6 +75,192 @@ def dashboard_admin(db: Session = Depends(get_db),
         }
     }
 
+@router.get("/metricas")
+def metricas_admin(db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_admin_user)):
+    """Métricas principais para o dashboard admin"""
+    
+    # Estatísticas dos últimos 30 dias
+    data_30_dias_atras = datetime.utcnow() - timedelta(days=30)
+    data_60_dias_atras = datetime.utcnow() - timedelta(days=60)
+    
+    # Usuários
+    usuarios_ativos = db.query(User).filter(User.is_active == True).count()
+    novos_usuarios_mes = db.query(User).filter(
+        User.created_at >= data_30_dias_atras
+    ).count()
+    
+    # Provas
+    provas_criadas = db.query(Prova).count()
+    provas_mes = db.query(Prova).filter(
+        Prova.created_at >= data_30_dias_atras
+    ).count()
+    
+    # Receita
+    receita_mensal = db.query(Pagamento).filter(
+        Pagamento.status == StatusPagamento.APROVADO,
+        Pagamento.created_at >= data_30_dias_atras
+    ).with_entities(func.sum(Pagamento.valor)).scalar() or 0
+    
+    # Receita do mês anterior para calcular crescimento
+    receita_mes_anterior = db.query(Pagamento).filter(
+        Pagamento.status == StatusPagamento.APROVADO,
+        Pagamento.created_at >= data_60_dias_atras,
+        Pagamento.created_at < data_30_dias_atras
+    ).with_entities(func.sum(Pagamento.valor)).scalar() or 0
+    
+    crescimento_mensal = 0
+    if receita_mes_anterior > 0:
+        crescimento_mensal = ((receita_mensal - receita_mes_anterior) / receita_mes_anterior) * 100
+    
+    return {
+        "usuariosAtivos": usuarios_ativos,
+        "novosUsuariosMes": novos_usuarios_mes,
+        "provasCriadas": provas_criadas,
+        "provasMes": provas_mes,
+        "receitaMensal": float(receita_mensal),
+        "crescimentoMensal": round(crescimento_mensal, 1)
+    }
+
+@router.get("/planos")
+def planos_distribuicao_admin(db: Session = Depends(get_db),
+                             current_user: User = Depends(get_current_admin_user)):
+    """Distribuição de usuários por plano"""
+    
+    # Buscar todos os planos com contagem de usuários ativos
+    planos_data = db.query(
+        Plano.nome,
+        Plano.tipo,
+        Plano.preco,
+        func.count(Assinatura.id).label('usuarios'),
+        func.coalesce(func.sum(Pagamento.valor), 0).label('receita')
+    ).outerjoin(Assinatura, Assinatura.plano_id == Plano.id).filter(
+        Assinatura.status == StatusAssinatura.ATIVA
+    ).outerjoin(Pagamento, Pagamento.assinatura_id == Assinatura.id).filter(
+        Pagamento.status == StatusPagamento.APROVADO
+    ).group_by(Plano.id, Plano.nome, Plano.tipo, Plano.preco).all()
+    
+    # Se não há dados, retornar planos básicos
+    if not planos_data:
+        planos_basicos = db.query(Plano).all()
+        return [
+            {
+                "nome": plano.nome,
+                "usuarios": 0,
+                "receita": 0.0,
+                "cor": "gray" if plano.tipo == "gratuito" else "blue"
+            }
+            for plano in planos_basicos
+        ]
+    
+    # Mapear cores para os planos
+    cores_planos = {
+        "gratuito": "gray",
+        "professor": "blue", 
+        "escola": "green"
+    }
+    
+    return [
+        {
+            "nome": plano.nome,
+            "usuarios": plano.usuarios or 0,
+            "receita": float(plano.receita or 0),
+            "cor": cores_planos.get(plano.tipo, "gray")
+        }
+        for plano in planos_data
+    ]
+
+@router.get("/faturas")
+def faturas_recentes_admin(db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_admin_user)):
+    """Faturas/pagamentos recentes"""
+    
+    # Buscar pagamentos recentes com dados do usuário e plano
+    pagamentos = db.query(
+        Pagamento,
+        User.name.label('usuario_nome'),
+        User.email.label('usuario_email'),
+        Plano.nome.label('plano_nome')
+    ).join(User, Pagamento.user_id == User.id).outerjoin(
+        Assinatura, Pagamento.assinatura_id == Assinatura.id
+    ).outerjoin(
+        Plano, Assinatura.plano_id == Plano.id
+    ).order_by(Pagamento.created_at.desc()).limit(10).all()
+    
+    return [
+        {
+            "id": pagamento.Pagamento.id,
+            "usuario": pagamento.usuario_nome,
+            "email": pagamento.usuario_email,
+            "plano": pagamento.plano_nome or "N/A",
+            "valor": float(pagamento.Pagamento.valor),
+            "status": pagamento.Pagamento.status.value,
+            "data": pagamento.Pagamento.created_at.strftime("%d/%m/%Y %H:%M")
+        }
+        for pagamento in pagamentos
+    ]
+
+@router.get("/usuarios-recentes")
+def usuarios_recentes_admin(db: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_admin_user)):
+    """Usuários recentemente cadastrados"""
+    
+    # Buscar usuários recentes com dados do plano
+    usuarios = db.query(
+        User,
+        Plano.nome.label('plano_nome')
+    ).outerjoin(
+        Assinatura, User.id == Assinatura.user_id
+    ).outerjoin(
+        Plano, Assinatura.plano_id == Plano.id
+    ).filter(
+        Assinatura.status == StatusAssinatura.ATIVA
+    ).order_by(User.created_at.desc()).limit(10).all()
+    
+    # Se não há usuários com assinaturas, buscar apenas usuários recentes
+    if not usuarios:
+        usuarios_simples = db.query(User).order_by(User.created_at.desc()).limit(10).all()
+        return [
+            {
+                "id": user.id,
+                "nome": user.name,
+                "email": user.email,
+                "plano": "Gratuito",
+                "dataRegistro": user.created_at.strftime("%d/%m/%Y %H:%M")
+            }
+            for user in usuarios_simples
+        ]
+    
+    return [
+        {
+            "id": usuario.User.id,
+            "nome": usuario.User.name,
+            "email": usuario.User.email,
+            "plano": usuario.plano_nome or "Gratuito",
+            "dataRegistro": usuario.User.created_at.strftime("%d/%m/%Y %H:%M")
+        }
+        for usuario in usuarios
+    ]
+
+@router.get("/usuarios")
+def listar_usuarios_admin(db: Session = Depends(get_db),
+                         current_user: User = Depends(get_current_admin_user)):
+    """Lista todos os usuários"""
+    
+    usuarios = db.query(User).order_by(User.created_at.desc()).all()
+    
+    return [
+        {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role.value,
+            "is_active": user.is_active,
+            "created_at": user.created_at.isoformat()
+        }
+        for user in usuarios
+    ]
+
 @router.get("/usuarios/estatisticas")
 def estatisticas_usuarios_admin(db: Session = Depends(get_db),
                                current_user: User = Depends(get_current_admin_user)):
@@ -101,7 +287,7 @@ def estatisticas_usuarios_admin(db: Session = Depends(get_db),
         Plano.nome,
         func.count(Assinatura.id).label('count')
     ).join(Assinatura).filter(
-        Assinatura.status == "ativa"
+        Assinatura.status == StatusAssinatura.ATIVA
     ).group_by(Plano.nome).all()
     
     return {
@@ -111,6 +297,46 @@ def estatisticas_usuarios_admin(db: Session = Depends(get_db),
             for nome, count in usuarios_por_plano
         ]
     }
+
+@router.post("/usuarios/{user_id}/suspender")
+def suspender_usuario_admin(user_id: int, db: Session = Depends(get_db),
+                           current_user: User = Depends(get_current_admin_user)):
+    """Suspende um usuário"""
+    
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não é possível suspender o próprio usuário"
+        )
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado"
+        )
+    
+    user.is_active = False
+    db.commit()
+    
+    return {"message": "Usuário suspenso com sucesso"}
+
+@router.post("/usuarios/{user_id}/ativar")
+def ativar_usuario_admin(user_id: int, db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_admin_user)):
+    """Ativa um usuário"""
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuário não encontrado"
+        )
+    
+    user.is_active = True
+    db.commit()
+    
+    return {"message": "Usuário ativado com sucesso"}
 
 @router.get("/provas/estatisticas")
 def estatisticas_provas_admin(db: Session = Depends(get_db),
