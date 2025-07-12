@@ -1,0 +1,13 @@
+/* ----------- Impressão: só mostra as questões ----------- */
+@media print {
+  body * {
+    display: none !important;
+  }
+  .space-y-8, .space-y-8 * {
+    display: block !important;
+  }
+  .space-y-8 {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+} 

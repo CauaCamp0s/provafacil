@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: provafacil_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: provafacil_db
+      MYSQL_USER: provafacil
+      MYSQL_PASSWORD: provafacil123
+    ports:
+      - "3319:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - provafacil_network
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: provafacil_backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=mysql+pymysql://provafacil:provafacil123@mysql:3306/provafacil_db
+      - SECRET_KEY=your-super-secret-key-change-in-production-2024
+      - GEMINI_KEY=${GEMINI_KEY}
+      - MERCADO_PAGO_ACCESS_TOKEN=${MERCADO_PAGO_ACCESS_TOKEN}
+      - MERCADO_PAGO_PUBLIC_KEY=${MERCADO_PAGO_PUBLIC_KEY}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - mysql
+    networks:
+      - provafacil_network
+    volumes:
+      - ./backend:/app
+    command: python run.py
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: provafacil_frontend
+    restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_MERCADO_PAGO_PUBLIC_KEY=${MERCADO_PAGO_PUBLIC_KEY}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - provafacil_network
+    volumes:
+      - ./app:/app/app
+      - ./components:/app/components
+      - ./hooks:/app/hooks
+      - ./lib:/app/lib
+
+  # Nginx (Proxy reverso)
+  nginx:
+    image: nginx:alpine
+    container_name: provafacil_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - provafacil_network
+
+volumes:
+  mysql_data:
+
+networks:
+  provafacil_network:
+    driver: bridge 
