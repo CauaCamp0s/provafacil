@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from typing import Optional
 from datetime import datetime
 from ..models.user import UserRole
@@ -37,3 +37,13 @@ class UserResponse(UserBase):
     
     class Config:
         from_attributes = True 
+
+class PasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+    
+    @validator('new_password')
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError('A nova senha deve ter pelo menos 6 caracteres')
+        return v 

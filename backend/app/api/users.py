@@ -5,7 +5,7 @@ from ..database import get_db
 from ..models.user import User
 from ..schemas.user import UserUpdate, UserResponse
 from ..auth.dependencies import get_current_active_user, get_current_admin_user
-from ..auth.security import get_password_hash
+from ..auth.security import get_password_hash, verify_password
 
 router = APIRouter()
 
@@ -37,6 +37,38 @@ def update_current_user(user_data: UserUpdate, db: Session = Depends(get_db),
     
     if user_data.password is not None:
         current_user.hashed_password = get_password_hash(user_data.password)
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return current_user
+
+@router.put("/me/password", response_model=UserResponse)
+def update_current_user_password(
+    password_data: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
+):
+    """Atualiza a senha do usuário atual"""
+    
+    current_password = password_data.get("current_password")
+    new_password = password_data.get("new_password")
+    
+    if not current_password or not new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Senha atual e nova senha são obrigatórias"
+        )
+    
+    # Verificar senha atual
+    if not verify_password(current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Senha atual incorreta"
+        )
+    
+    # Atualizar senha
+    current_user.hashed_password = get_password_hash(new_password)
     
     db.commit()
     db.refresh(current_user)

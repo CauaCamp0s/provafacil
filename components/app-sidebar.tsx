@@ -184,9 +184,11 @@ export function AppSidebar() {
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" className="w-[--radix-popper-anchor-width]">
-                <DropdownMenuItem>
-                  <User className="w-4 h-4 mr-2" />
-                  <span>Perfil</span>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/perfil">
+                    <User className="w-4 h-4 mr-2" />
+                    <span>Perfil</span>
+                  </Link>
                 </DropdownMenuItem>
 
                 {/* Opção de Admin só aparece para administradores */}
