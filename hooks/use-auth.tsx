@@ -40,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("Erro ao verificar autenticação:", error)
         // Token inválido, remover do localStorage
         removeAuthToken()
+        localStorage.removeItem("user")
       } finally {
         setLoading(false)
       }
@@ -74,6 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     removeAuthToken()
+    localStorage.removeItem("user")
     setUser(null)
   }
 
