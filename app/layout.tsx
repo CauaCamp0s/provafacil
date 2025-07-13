@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "ProvaFácil",
-  description: "Crie provas facilmente com IA",
+  description: "Sistema de geração de provas com IA",
 }
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
-      <body className={inter.className}>
+      <body className={inter.className} suppressHydrationWarning={true}>
         <AuthProvider>
           {children}
         </AuthProvider>

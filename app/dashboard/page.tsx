@@ -5,25 +5,38 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { FileText, Plus } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/hooks/use-toast"
 import { provasService, Prova } from "@/lib/api"
 
 export default function Dashboard() {
   const [provas, setProvas] = useState<Prova[]>([])
   const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
 
   useEffect(() => {
     const fetchProvas = async () => {
       try {
         const data = await provasService.listarProvas()
         setProvas(data)
+        if (data.length === 0) {
+          toast({
+            title: "Nenhuma prova encontrada",
+            description: "Crie sua primeira prova para começar!",
+          })
+        }
       } catch (error) {
         setProvas([])
+        toast({
+          title: "Erro ao carregar provas",
+          description: "Tente novamente mais tarde.",
+          variant: "destructive",
+        })
       } finally {
         setLoading(false)
       }
     }
     fetchProvas()
-  }, [])
+  }, [toast])
 
   return (
     <div className="space-y-6">

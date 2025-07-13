@@ -35,14 +35,25 @@ export default function ProvasSalvas() {
       try {
         const data = await provasService.listarProvas()
         setProvas(data)
+        if (data.length === 0) {
+          toast({
+            title: "Nenhuma prova salva",
+            description: "Crie sua primeira prova para começar!",
+          })
+        }
       } catch (error) {
         setProvas([])
+        toast({
+          title: "Erro ao carregar provas",
+          description: "Tente novamente mais tarde.",
+          variant: "destructive",
+        })
       } finally {
         setLoading(false)
       }
     }
     fetchProvas()
-  }, [])
+  }, [toast])
 
   const filteredProvas = provas.filter((prova) =>
     prova.titulo.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -55,11 +66,18 @@ export default function ProvasSalvas() {
     try {
       await provasService.deletarProva(provaParaDeletar.id)
       setProvas((prev) => prev.filter((p) => p.id !== provaParaDeletar.id))
-      toast({ title: "Prova deletada com sucesso!" })
+      toast({ 
+        title: "Prova deletada com sucesso!",
+        description: `A prova "${provaParaDeletar.titulo}" foi removida.`
+      })
       setProvaParaDeletar(null)
       setConfirmacaoTexto("")
-    } catch {
-      toast({ title: "Erro ao deletar prova", variant: "destructive" })
+    } catch (error) {
+      toast({ 
+        title: "Erro ao deletar prova", 
+        description: "Tente novamente mais tarde.",
+        variant: "destructive" 
+      })
     }
   }
 
@@ -74,14 +92,16 @@ export default function ProvasSalvas() {
           className="w-64"
         />
       </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {loading ? (
-          <div className="col-span-full text-center text-gray-500">Carregando provas...</div>
-        ) : filteredProvas.length === 0 ? (
-          <div className="col-span-full text-center text-gray-500">Nenhuma prova encontrada.</div>
-        ) : (
-          filteredProvas.map((prova) => (
+
+      {loading ? (
+        <div className="text-center text-gray-500">Carregando provas...</div>
+      ) : filteredProvas.length === 0 ? (
+        <div className="text-center text-gray-500">
+          {searchTerm ? "Nenhuma prova encontrada com esse termo." : "Nenhuma prova salva ainda."}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProvas.map((prova) => (
             <Card key={prova.id}>
               <CardHeader>
                 <CardTitle className="flex items-center">
@@ -157,8 +177,8 @@ export default function ProvasSalvas() {
               </CardContent>
             </Card>
           ))
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
